@@ -782,39 +782,31 @@
   var root = null;
 
   function buildShell() {
-    root.setAttribute('data-theme', state.theme);
-    root.setAttribute('data-view', state.view);
-    root.innerHTML =
-      '<header class="topbar">' +
-        '<div class="brand"><span class="brand-mark">◎</span><div><h1>' + esc(t('appTitle')) + '</h1><span class="tagline">' + esc(t('tagline')) + '</span></div></div>' +
-        '<div class="quick-toggles">' +
-          '<button class="btn btn-icon" data-action="toggle-theme" title="' + esc(t('theme')) + '">' + (state.theme === 'dark' ? '☾' : '☀') + '</button>' +
-          '<button class="btn btn-icon" data-action="toggle-lang" title="' + esc(t('language')) + '">' + (state.lang === 'de' ? 'DE' : 'EN') + '</button>' +
-          '<button class="btn btn-icon" data-action="toggle-units" title="' + esc(t('units')) + '">' + (isImp() ? 'yd' : 'm') + '</button>' +
-          '<button class="btn btn-icon" data-action="toggle-view" title="' + esc(t('view')) + '">' + (state.view === 'compact' ? '▤' : '▦') + '</button>' +
-          '<button class="btn btn-icon" data-action="lexicon" data-topic="bc" title="' + esc(t('lexicon')) + '">📖</button>' +
-        '</div>' +
-      '</header>' +
-      (state.dbOk ? '' : '<div class="db-error" role="alert">' + esc(t('dbError')) + '</div>') +
-      '<main class="main">' +
-        '<section class="section" id="sec-calc"></section>' +
-        '<section class="section" id="sec-profiles"></section>' +
-        '<section class="section" id="sec-log"></section>' +
-        '<section class="section" id="sec-settings"></section>' +
-      '</main>' +
-      '<div class="disclaimer-bar"><span>' + esc(t('disclaimer')) + '</span></div>' +
-      '<nav class="bottomnav">' +
-        navBtn('calc', '⌖', t('navCalc')) + navBtn('profiles', '🗂', t('navProfiles')) +
-        navBtn('log', '✎', t('navLog')) + navBtn('settings', '⚙', t('navSettings')) +
-      '</nav>' +
-      '<div id="modal-root"></div><div id="toast-root" aria-live="polite"></div>' +
-      '<input type="file" id="import-file" accept="application/json,.json" hidden>';
-    renderCalcSection();
-    renderProfiles();
-    renderLogbook();
-    renderSettings();
-    showSection(state.section);
-  }
+   root.innerHTML =
+    '<header class="topbar">' +
+      '<div class="brand"><span class="brand-mark">◎</span><div><h1>' + esc(t('appTitle')) + '</h1><span class="tagline">' + esc(t('tagline')) + '</span></div></div>' +
+      // Quick-Toggles wurden entfernt und in die Einstellungen integriert
+    '</header>' +
+    (state.dbOk ? '' : '<div class="db-error" role="alert">' + esc(t('dbError')) + '</div>') +
+    '<main class="main">' +
+      '<section class="section" id="sec-calc"></section>' +
+      '<section class="section" id="sec-profiles"></section>' +
+      '<section class="section" id="sec-log"></section>' +
+      '<section class="section" id="sec-settings"></section>' +
+    '</main>' +
+    '<div class="disclaimer-bar"><span>' + esc(t('disclaimer')) + '</span></div>' +
+    '<nav class="bottomnav">' +
+      navBtn('calc', '⌖', t('navCalc')) + navBtn('profiles', '🗂', t('navProfiles')) +
+      navBtn('log', '✎', t('navLog')) + navBtn('settings', '⚙', t('navSettings')) +
+    '</nav>' +
+    '<div id="modal-root"></div><div id="toast-root" aria-live="polite"></div>' +
+    '<input type="file" id="import-file" accept="application/json,.json" hidden>';
+  renderCalcSection();
+  renderProfiles();
+  renderLogbook();
+  renderSettings();
+  showSection(state.section);
+}
 
   function navBtn(sec, icon, label) {
     return '<button class="nav-btn' + (state.section === sec ? ' active' : '') + '" data-action="nav" data-section="' + sec + '">' +
@@ -1064,8 +1056,7 @@
       }).join('');
     }
     sec.innerHTML =
-      '<div class="section-head"><h2>' + esc(t('settings')) + '</h2></div>' +
-      '<div class="card"><h3>' + esc(t('language')) + ' · ' + esc(t('units')) + ' · ' + esc(t('theme')) + ' · ' + esc(t('view')) + '</h3>' +
+        '<div class="card"><h3>' + esc(t('language')) + ' · ' + esc(t('units')) + ' · ' + esc(t('theme')) + ' · ' + esc(t('view')) + '</h3>' +
         '<div class="field-grid">' +
         '<label class="field"><span class="field-label">' + esc(t('language')) + '</span>' +
           selectHtml('set.lang', [{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' }], state.lang) + '</label>' +

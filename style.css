@@ -265,7 +265,10 @@ a { color: var(--amber); }
   color: var(--text-faint);
 }
 
+/* 
 .quick-toggles { display: flex; gap: 6px; flex: none; }
+*/
+.quick-toggles { display: none; }
 
 /* ----------------------------------------------------------------------------
    6. Buttons: taktile Instrumenten-Tasten
