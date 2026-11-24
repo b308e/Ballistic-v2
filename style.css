@@ -437,7 +437,7 @@ a { color: var(--amber); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
-  align-items: start;
+  align-items: start !important;
 }
 .field.wide { grid-column: 1 / -1; }
 

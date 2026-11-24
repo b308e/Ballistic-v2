@@ -1294,7 +1294,12 @@
         state.env.latitudeDeg = Math.round(pos.coords.latitude * 1000) / 1000;
         state.env.altitudeM = pos.coords.altitude != null ? Math.round(pos.coords.altitude) : state.env.altitudeM;
         state.env.locationName = 'GPS ' + pos.coords.latitude.toFixed(3) + ', ' + pos.coords.longitude.toFixed(3);
-        document.getElementById('gps-location').textContent = state.env.locationName;
+        var gpsLocationEl = document.getElementById('gps-location');
+        if (gpsLocationEl) {
+       gpsLocationEl.textContent = state.env.locationName;
+       }
+      
+        
         state.lastWeather = state.lastWeather || null;
         state.gpsLon = pos.coords.longitude;
         persistSettings(); renderCalcSection();
