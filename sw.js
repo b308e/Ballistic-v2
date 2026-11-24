@@ -17,7 +17,7 @@
   'use strict';
 
   /* Cache-Version bei jedem Asset-Wechsel erhöhen, besonders beim DB-Tausch. */
-  var CACHE_VERSION = 'sniper-v0.1';
+  var CACHE_VERSION = 'sniper-v0.11';
 
   /* Kern-Assets: müssen beim Install vollständig gecacht werden. */
   var CORE_ASSETS = [
