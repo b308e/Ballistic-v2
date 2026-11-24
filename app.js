@@ -259,6 +259,7 @@
    * Geo-Fallback-Liste (~25 Städte in DE, AT, CH, USA) mit Breitengrad
    * ------------------------------------------------------------------------*/
   var CITIES = [
+    // Deutschland
     { n: 'Berlin', c: 'DE', lat: 52.52, lon: 13.405, alt: 34 },
     { n: 'Hamburg', c: 'DE', lat: 53.55, lon: 9.99, alt: 6 },
     { n: 'München', c: 'DE', lat: 48.14, lon: 11.58, alt: 520 },
@@ -269,16 +270,51 @@
     { n: 'Hannover', c: 'DE', lat: 52.37, lon: 9.73, alt: 55 },
     { n: 'Nürnberg', c: 'DE', lat: 49.45, lon: 11.08, alt: 302 },
     { n: 'Freiburg', c: 'DE', lat: 47.99, lon: 7.84, alt: 278 },
+    // Österreich
     { n: 'Wien', c: 'AT', lat: 48.21, lon: 16.37, alt: 171 },
     { n: 'Graz', c: 'AT', lat: 47.07, lon: 15.44, alt: 353 },
     { n: 'Salzburg', c: 'AT', lat: 47.80, lon: 13.04, alt: 424 },
     { n: 'Innsbruck', c: 'AT', lat: 47.27, lon: 11.40, alt: 574 },
     { n: 'Klagenfurt', c: 'AT', lat: 46.62, lon: 14.31, alt: 446 },
+    // Schweiz
     { n: 'Zürich', c: 'CH', lat: 47.38, lon: 8.54, alt: 408 },
     { n: 'Bern', c: 'CH', lat: 46.95, lon: 7.45, alt: 540 },
     { n: 'Basel', c: 'CH', lat: 47.56, lon: 7.59, alt: 260 },
     { n: 'Genf', c: 'CH', lat: 46.20, lon: 6.14, alt: 375 },
     { n: 'Chur', c: 'CH', lat: 46.85, lon: 9.53, alt: 593 },
+    // Polen (Neu)
+    { n: 'Warschau', c: 'PL', lat: 52.23, lon: 21.01, alt: 100 },
+    { n: 'Krakau', c: 'PL', lat: 50.06, lon: 19.94, alt: 220 },
+    { n: 'Breslau', c: 'PL', lat: 51.11, lon: 17.04, alt: 110 },
+    { n: 'Posen', c: 'PL', lat: 52.41, lon: 16.92, alt: 70 },
+    { n: 'Danzig', c: 'PL', lat: 54.35, lon: 18.65, alt: 15 },
+    { n: 'Lodz', c: 'PL', lat: 51.76, lon: 19.46, alt: 180 },
+    { n: 'Rzeszów', c: 'PL', lat: 50.04, lon: 21.99, alt: 200 },
+    // Ukraine (Neu)
+    { n: 'Kiew', c: 'UA', lat: 50.45, lon: 30.52, alt: 170 },
+    { n: 'Charkiw', c: 'UA', lat: 49.99, lon: 36.23, alt: 150 },
+    { n: 'Odessa', c: 'UA', lat: 46.48, lon: 30.73, alt: 40 },
+    { n: 'Dnipro', c: 'UA', lat: 48.46, lon: 35.04, alt: 80 },
+    { n: 'Donezk', c: 'UA', lat: 48.02, lon: 37.80, alt: 200 },
+    { n: 'Lwiw', c: 'UA', lat: 49.84, lon: 24.02, alt: 290 },
+    { n: 'Saporischschja', c: 'UA', lat: 47.84, lon: 35.12, alt: 110 },
+    // Russland (Neu - Europäische Teile & Ural)
+    { n: 'Moskau', c: 'RU', lat: 55.75, lon: 37.62, alt: 150 },
+    { n: 'St. Petersburg', c: 'RU', lat: 59.93, lon: 30.33, alt: 10 },
+    { n: 'Nowosibirsk', c: 'RU', lat: 55.00, lon: 82.93, alt: 160 },
+    { n: 'Jekaterinburg', c: 'RU', lat: 56.84, lon: 60.61, alt: 250 },
+    { n: 'Kasan', c: 'RU', lat: 55.79, lon: 49.10, alt: 60 },
+    { n: 'Nischni Nowgorod', c: 'RU', lat: 56.30, lon: 44.00, alt: 140 },
+    { n: 'Tscheljabinsk', c: 'RU', lat: 55.15, lon: 61.43, alt: 220 },
+    { n: 'Samara', c: 'RU', lat: 53.20, lon: 50.15, alt: 120 },
+    { n: 'Omsk', c: 'RU', lat: 54.98, lon: 73.37, alt: 100 },
+    { n: 'Rostow am Don', c: 'RU', lat: 47.23, lon: 39.72, alt: 70 },
+    { n: 'Ufa', c: 'RU', lat: 54.73, lon: 55.97, alt: 140 },
+    { n: 'Krasnojarsk', c: 'RU', lat: 56.02, lon: 92.87, alt: 140 },
+    { n: 'Perm', c: 'RU', lat: 58.01, lon: 56.25, alt: 170 },
+    { n: 'Woronesch', c: 'RU', lat: 51.67, lon: 39.20, alt: 150 },
+    { n: 'Wolgograd', c: 'RU', lat: 48.71, lon: 44.50, alt: 80 },
+    // USA (Bestehend)
     { n: 'New York', c: 'US', lat: 40.71, lon: -74.01, alt: 10 },
     { n: 'Los Angeles', c: 'US', lat: 34.05, lon: -118.24, alt: 93 },
     { n: 'Chicago', c: 'US', lat: 41.88, lon: -87.63, alt: 181 },
@@ -1258,6 +1294,7 @@
         state.env.latitudeDeg = Math.round(pos.coords.latitude * 1000) / 1000;
         state.env.altitudeM = pos.coords.altitude != null ? Math.round(pos.coords.altitude) : state.env.altitudeM;
         state.env.locationName = 'GPS ' + pos.coords.latitude.toFixed(3) + ', ' + pos.coords.longitude.toFixed(3);
+        document.getElementById('gps-location').textContent = state.env.locationName;
         state.lastWeather = state.lastWeather || null;
         state.gpsLon = pos.coords.longitude;
         persistSettings(); renderCalcSection();
