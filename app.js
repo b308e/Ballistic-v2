@@ -881,7 +881,8 @@
             '<span class="hint">' + esc(t('windDirHint')) + '</span></label>' +
           fieldHtml(t('shotAngle'), 'env.shotAngleDeg', state.env.shotAngleDeg, { step: '1', min: -60, max: 60, topic: 'zero' }) +
         '</div>' +
-        '<div class="geo-row">' +
+         '<span class="grid-note">' + esc(t('windDirHint')) + '</span>' +
+         '<div class="geo-row">' +
           '<button class="btn" data-action="gps">📍 ' + esc(t('gps')) + '</button>' +
           selectHtml('city', [{ value: '', label: t('chooseCity') }].concat(CITIES.map(function (c, i) {
             return { value: i, label: c.n + ' (' + c.c + ')' };
