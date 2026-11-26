@@ -1,131 +1,153 @@
 /* ============================================================================
- * sw.js — Service Worker der Ballistik-PWA
- * ----------------------------------------------------------------------------
- * Offline-Fähigkeit nach dem ersten Laden, Android Chrome + iOS Safari,
- * auch als installierte PWA. Kommentare Deutsch, Variablen Englisch.
- *
- * WICHTIG — AUSTAUSCH DER EXTERNEN DB:
- * Werden ammo-db-long.js oder ammo-db-short.js durch die echte DB ersetzt,
- * MUSS CACHE_VERSION erhöht werden (z. B. sniper-v15 -> sniper-v16).
- * Sonst liefert der Cache weiterhin die alte Datenbank aus.
- *
- * WICHTIG — WETTER-API:
- * Open-Meteo (und generell alle Fremdorigins) werden NIEMALS gecacht.
- * Der Worker reicht solche Anfragen unverändert ans Netz durch.
- * ==========================================================================*/
-(function () {
-  'use strict';
+   sw.js — Service Worker der Sniper-Ballistik-PWA
+   ----------------------------------------------------------------------------
+   Cache-Version: sniper-v17  (Stand: 2026-11-27, App v1.1.0)
+   Strategie:
+     - Navigation (HTML):  Network-first, Offline-Fallback auf gecachtes index.html
+     - sw.js selbst:       Network-first, damit die Versions-Karte frisch liest
+     - App-Assets:         Cache-first (Version-Bump bei JEDEM Release Pflicht!)
+     - Wetter-APIs:        werden NIE gecacht (immer live, Offline = Fehlermeldung)
+   Install ist fehlertolerant: einzelne fehlende Assets (z. B. Icons) verhindern
+   nicht die Offline-Fähigkeit der Kern-App.
+   WORKFLOW BEI UPDATES: CACHE_VERSION hochzählen -> pushen -> Seite neu laden.
+   ========================================================================== */
+'use strict';
 
-  /* Cache-Version bei jedem Asset-Wechsel erhöhen, besonders beim DB-Tausch. */
-  var CACHE_VERSION = 'sniper-v0.121';
+var CACHE_VERSION = 'sniper-v0.13';
+var CACHE_NAME = 'sniper-' + CACHE_VERSION;
 
-  /* Kern-Assets: müssen beim Install vollständig gecacht werden. */
-  var CORE_ASSETS = [
-    './index.html',
-    './style.css',
-    './ballistics.js',
-    './ammo-db-long.js',
-    './ammo-db-short.js',
-    './app.js',
-    './manifest.json'
-  ];
+/* Alle App-Assets relativ zum SW-Scope (funktioniert auf GitHub Pages
+   unter /Ballistic-v2/ ebenso wie auf localhost oder eigener Domain). */
+var PRECACHE_ASSETS = [
+  './',
+  './index.html',
+  './style.css',
+  './ballistics.js',
+  './ammo-db-long.js',
+  './ammo-db-short.js',
+  './app.js',
+  './manifest.json',
+  './sw.js',
+  './icon-192.png',
+  './icon-512.png'
+];
 
-  /* Icons sind Pflicht-Assets laut Manifest, liegen aber außerhalb der 8 Dateien.
-   * Sie werden einzeln gecacht; fehlt eine Datei, darf die Installation NICHT
-   * scheitern (sonst wäre die App nicht offline-fähig). */
-  var OPTIONAL_ASSETS = [
-    './icon-192.png',
-    './icon-512.png'
-  ];
+/* Hosts, deren Antworten niemals in den Cache wandern dürfen. */
+var NEVER_CACHE_HOSTS = /open-meteo\.com|openweathermap\.org|weatherapi\.com|meteoblue\.com/i;
 
-  /* Installation: Kern-Assets atomar cachen, Icons best effort, dann sofort aktiv. */
-  self.addEventListener('install', function (event) {
-    event.waitUntil(
-      caches.open(CACHE_VERSION).then(function (cache) {
-        return cache.addAll(CORE_ASSETS).then(function () {
-          return Promise.all(OPTIONAL_ASSETS.map(function (url) {
-            return cache.add(url).catch(function () {
-              /* Icon fehlt: bewusst ignorieren, Offline-Kern bleibt intakt. */
-              return null;
-            });
-          }));
+/* ----------------------------------------------------------------------------
+   INSTALL: Precache (fehlertolerant pro Datei), sofort aktiv werden
+   -------------------------------------------------------------------------- */
+self.addEventListener('install', function (event) {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function (cache) {
+      return Promise.all(PRECACHE_ASSETS.map(function (url) {
+        return cache.add(url).catch(function (err) {
+          console.warn('[SW] Precache übersprungen:', url, err);
         });
-      }).then(function () {
-        return self.skipWaiting();
-      })
-    );
-  });
+      }));
+    }).then(function () {
+      return self.skipWaiting();
+    })
+  );
+});
 
-  /* Aktivierung: alte Cache-Versionen entfernen, offene Clients übernehmen. */
-  self.addEventListener('activate', function (event) {
-    event.waitUntil(
-      caches.keys().then(function (keys) {
-        return Promise.all(keys.map(function (key) {
-          if (key !== CACHE_VERSION) return caches.delete(key);
-          return null;
-        }));
-      }).then(function () {
-        return self.clients.claim();
-      })
-    );
-  });
+/* ----------------------------------------------------------------------------
+   ACTIVATE: alte Cache-Versionen löschen, offene Tabs übernehmen
+   -------------------------------------------------------------------------- */
+self.addEventListener('activate', function (event) {
+  event.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.map(function (key) {
+        if (key !== CACHE_NAME && key.indexOf('sniper-') === 0) {
+          return caches.delete(key);
+        }
+      }));
+    }).then(function () {
+      return self.clients.claim();
+    })
+  );
+});
 
-  /* Fetch-Strategie:
-   * - Nur GET, nur eigener Origin. Fremdorigins (Wetter!) bleiben unberührt.
-   * - Navigationen: Network-first, offline Fallback auf gecachtes index.html.
-   * - Assets: Cache-first mit Netz-Fallback; erfolgreiche Antworten werden
-   *     gecacht. Die DB bleibt damit stabil, bis CACHE_VERSION erhöht wird. */
-  self.addEventListener('fetch', function (event) {
-    var request = event.request;
-    if (request.method !== 'GET') return;
+/* ----------------------------------------------------------------------------
+   MESSAGE: explizites Skip-Waiting von der Seite aus (optional nutzbar)
+   -------------------------------------------------------------------------- */
+self.addEventListener('message', function (event) {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
-    var url;
-    try {
-      url = new URL(request.url);
-    } catch (e) {
-      return;
+/* ----------------------------------------------------------------------------
+   FETCH-STRATEGIEN
+   -------------------------------------------------------------------------- */
+function networkFirst(request, fallbackUrls) {
+  return fetch(request).then(function (response) {
+    if (response && response.status === 200 && response.type === 'basic') {
+      var clone = response.clone();
+      caches.open(CACHE_NAME).then(function (cache) {
+        cache.put(request, clone);
+      });
     }
-
-    /* Wetter-API explizit niemals cachen oder abfangen. */
-    if (url.hostname.indexOf('open-meteo.com') !== -1) return;
-
-    /* Alles von anderen Origins (CDNs, APIs, Wetter) direkt ans Netz. */
-    if (url.origin !== self.location.origin) return;
-
-    /* App-Navigationen: frisch laden, wenn möglich; offline aus dem Cache. */
-    if (request.mode === 'navigate') {
-      event.respondWith(
-        fetch(request).then(function (response) {
-          if (response && response.ok) {
-            var copy = response.clone();
-            caches.open(CACHE_VERSION).then(function (cache) {
-              cache.put('./index.html', copy);
-            });
-          }
-          return response;
-        }).catch(function () {
-          return caches.match('./index.html').then(function (cached) {
-            return cached || caches.match('./');
-          });
-        })
-      );
-      return;
-    }
-
-    /* Statische Assets: Cache-first, Netz als Fallback, Erfolg nachcachen. */
-    event.respondWith(
-      caches.match(request).then(function (cached) {
-        if (cached) return cached;
-        return fetch(request).then(function (response) {
-          if (response && response.ok && response.type === 'basic') {
-            var copy = response.clone();
-            caches.open(CACHE_VERSION).then(function (cache) {
-              cache.put(request, copy);
-            });
-          }
-          return response;
+    return response;
+  }).catch(function () {
+    return caches.match(request, { ignoreSearch: true }).then(function (hit) {
+      if (hit) return hit;
+      var chain = Promise.resolve(null);
+      (fallbackUrls || []).forEach(function (url) {
+        chain = chain.then(function (found) {
+          return found || caches.match(url, { ignoreSearch: true });
         });
-      })
-    );
+      });
+      return chain.then(function (found) {
+        return found || new Response('Offline', { status: 503, statusText: 'Offline' });
+      });
+    });
   });
-})();
+}
+
+function cacheFirst(request) {
+  return caches.match(request, { ignoreSearch: true }).then(function (hit) {
+    if (hit) return hit;
+    return fetch(request).then(function (response) {
+      if (response && response.status === 200 && response.type === 'basic') {
+        var clone = response.clone();
+        caches.open(CACHE_NAME).then(function (cache) {
+          cache.put(request, clone);
+        });
+      }
+      return response;
+    }).catch(function () {
+      return new Response('Offline', { status: 503, statusText: 'Offline' });
+    });
+  });
+}
+
+self.addEventListener('fetch', function (event) {
+  var request = event.request;
+  if (request.method !== 'GET') return;
+
+  var url;
+  try { url = new URL(request.url); } catch (e) { return; }
+
+  /* Wetter & alles Fremde: niemals cachen, direkt ans Netz durchreichen.
+     Offline schlägt der Request fehl -> die App zeigt ihre Fehlermeldung. */
+  if (url.origin !== self.location.origin || NEVER_CACHE_HOSTS.test(url.hostname)) {
+    return;
+  }
+
+  /* sw.js selbst: immer frisch vom Netz (Versions-Karte), Offline aus Cache. */
+  if (/\/sw\.js$/.test(url.pathname)) {
+    event.respondWith(networkFirst(request, ['./sw.js']));
+    return;
+  }
+
+  /* Navigation: Network-first, Offline-Fallback auf die App-Hülle. */
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request, ['./index.html', './']));
+    return;
+  }
+
+  /* Alles andere (JS/CSS/Manifest/Icons): Cache-first. */
+  event.respondWith(cacheFirst(request));
+});

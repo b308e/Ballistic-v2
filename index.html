@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-  index.html — Einstiegspunkt der Ballistik-PWA
+  index.html — Einstiegspunkt der Ballistik-PWA (v1.1.0)
   --------------------------------------------------------------------------
   Vanilla HTML, kein Framework, kein Build-Tool.
   Die gesamte Oberfläche wird von app.js in #app gerendert.
@@ -8,16 +8,23 @@
     1. ballistics.js      (Physik-Engine, stellt window.Ballistics bereit)
     2. ammo-db-long.js    (externe Langwaffen-DB, später durch echte DB ersetzbar)
     3. ammo-db-short.js   (externe Kurzwaffen-DB, später durch echte DB ersetzbar)
-    4. app.js             (Anwendung, nutzt Engine + DBs, rendert alles)
+    4. app.js             (Anwendung + UX-Modul am Dateiende: Wind-Ring,
+                           Drop-Kurve, Sensor-Overlay, Messdauer, Version)
   Kein async/defer: Die Reihenfolge muss synchron und garantiert sein.
-  Beim Austausch der DB-Dateien: Cache-Version in sw.js erhöhen!
+  Beim Austausch der DB-Dateien oder bei Updates: Cache-Version in sw.js erhöhen!
+  Das meta[name="app-version"] ist die einzige Quelle der Versionsanzeige
+  in den Einstellungen — bei einem Release hier UND in sw.js aktualisieren.
 =========================================================================== -->
 <html lang="de">
 <head>
   <meta charset="UTF-8">
   <!-- Viewport: Mobile-First, viewport-fit=cover für iOS-Safe-Areas (Notch) -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="Offline-Flugbahnrechner für Lang- und Kurzwaffen: G1/G7-Ballistik, Coriolis, Spin Drift, Dichtehöhe, Hersteller-Referenzen, Waffenprofile und Schusslogbuch.">
+  <meta name="description" content="Offline-Flugbahnrechner für Lang- und Kurzwaffen: G1/G7-Ballistik, Coriolis, Spin Drift, Dichtehöhe, Drop-Kurve, Wind-Kompass, Hersteller-Referenzen, Waffenprofile und Schusslogbuch.">
+
+  <!-- App-Version: wird von der Versions-Karte in den Einstellungen gelesen -->
+  <meta name="app-version" content="1.1.0">
+  <meta name="application-name" content="Sniper Ballistik">
 
   <!-- PWA: Manifest + Theme. Standard ist Dark Mode, Farbe passt zu style.css -->
   <link rel="manifest" href="manifest.json">
@@ -32,8 +39,8 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Tab-Icon als Inline-SVG (Fadenkreuz), funktioniert auch ohne PNG-Dateien.
-       Die PNG-Icons icon-192.png / icon-512.png werden vom Manifest und vom
-       Service Worker erwartet und extern bereitgestellt. -->
+       icon-192.png / icon-512.png liegen im Repo und werden vom Manifest
+       und vom Service Worker erwartet. -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0e13'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23f5a524' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='4' fill='%23f5a524'/%3E%3Cpath d='M32 6v10M32 48v10M6 32h10M48 32h10' stroke='%2338d39f' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
 
   <title>Sniper Ballistik</title>
@@ -65,7 +72,8 @@
   </noscript>
 
   <!-- Skripte in PFLICHT-Reihenfolge: Engine vor DB, DB vor App.
-       app.js enthält selbst keine Munitionsdaten mehr. -->
+       app.js enthält selbst keine Munitionsdaten mehr; das UX-Modul
+       (Wind-Ring, Drop-Kurve, Sensorik, Version) ist an app.js angehängt. -->
   <script src="ballistics.js"></script>
   <script src="ammo-db-long.js"></script>
   <script src="ammo-db-short.js"></script>
