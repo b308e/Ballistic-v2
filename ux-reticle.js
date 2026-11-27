@@ -17,7 +17,7 @@
   window.__sniperReticleMounted = true;
 
   var KEY = 'sniperReticle.v1';
-  var DEF = { ret: 'mildot', mag: 10, ffp: true, dist: 0, target: 'mann', hCm: 175, mode: 'hold', wind: true, illum: true, sway: false };
+  var DEF = { ret: 'mildot', mag: 10, ffp: true, dist: 0, target: 'ipsc', hCm: 45, mode: 'hold', wind: true, illum: true, sway: false };
   var S = JSON.parse(JSON.stringify(DEF));
   try { var p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (var k in DEF) if (p[k] !== undefined) S[k] = p[k]; } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -98,9 +98,9 @@
         '<div class="segmented" style="margin:0"><button type="button" class="seg-btn" id="rt-ffp">FFP</button><button type="button" class="seg-btn" id="rt-sfp">SFP</button></div></div>' +
         '<label class="field"><span class="field-label">' + L('Distanz', 'Distance') + '</span><select class="input" id="rt-dist"></select></label>' +
         '<label class="field"><span class="field-label">' + L('Ziel', 'Target') + '</span>' +
-        '<select class="input" id="rt-target"><option value="mann">' + L('Mann (175 cm)', 'Man (175 cm)') + '</option><option value="brust">' + L('Brust (50 cm)', 'Chest (50 cm)') + '</option><option value="hase">' + L('Hase (35 cm)', 'Hare (35 cm)') + '</option><option value="ipsc">IPSC (45 cm)</option><option value="custom">' + L('Eigene Höhe', 'Custom height') + '</option></select></label>' +
+        '<select class="input" id="rt-target"><option value="ipsc">IPSC (45 cm)</option><option value="mann">' + L('Mann (175 cm)', 'Man (175 cm)') + '</option><option value="brust">' + L('Brust (50 cm)', 'Chest (50 cm)') + '</option><option value="hase">' + L('Hase (35 cm)', 'Hare (35 cm)') + '</option><option value="custom">' + L('Eigene Höhe', 'Custom height') + '</option></select></label>' +
         '<label class="field"><span class="field-label">' + L('Zielhöhe (cm)', 'Target height (cm)') + '</span>' +
-        '<input class="input" type="number" id="rt-h" min="5" max="300" step="1" value="175"></label>' +
+        '<input class="input" type="number" id="rt-h" min="5" max="300" step="1" value="45"></label>' +
         '<div class="field"><span class="field-label">' + L('Korrektur', 'Correction') + '</span>' +
         '<div class="segmented" style="margin:0"><button type="button" class="seg-btn" id="rt-hold">Hold</button><button type="button" class="seg-btn" id="rt-dial">Dial</button></div></div>' +
         '<div class="field"><span class="field-label">' + L('Wind einrechnen', 'Include wind') + '</span>' +
@@ -150,7 +150,7 @@
       var h = { mann: 175, brust: 50, hase: 35, ipsc: 45 }[v];
       if (h) { S.hCm = h; var hi = document.getElementById('rt-h'); if (hi) hi.value = h; }
     }
-    else if (id === 'rt-h') { S.hCm = Math.max(5, Math.min(300, num(v) || 175)); S.target = 'custom'; var ts = document.getElementById('rt-target'); if (ts) ts.value = 'custom'; }
+    else if (id === 'rt-h') { S.hCm = Math.max(5, Math.min(300, num(v) || 45)); S.target = 'custom'; var ts = document.getElementById('rt-target'); if (ts) ts.value = 'custom'; }
     else if (id === 'rt-wind') S.wind = ev.target.checked;
     else if (id === 'rt-illum') S.illum = ev.target.checked;
     else if (id === 'rt-sway') { S.sway = ev.target.checked; loop(); }
@@ -230,29 +230,64 @@
 
     ctx.translate(swayX, swayY);
 
-    /* Ziel-Silhouette, angular korrekt skaliert */
+    /* Ziel-Silhouette, angular korrekt skaliert.
+       Aim-Punkt (IPSC: Mitte A-Zone) ist FEST an (cx, cy) gekoppelt –
+       das Ziel wird um diesen Punkt herum aufgebaut, nicht an einer Bodenlinie. */
     var hMil = sol ? (S.hCm * 10) / sol.d : (S.hCm * 10) / 300;
     var hPx = Math.max(3, hMil * ppm);
-    var ty = cy + R * 0.35 - hPx;
+    var aimY = cy;                    // fester Aim-Punkt = Fadenkreuz-Zentrum
+    var topY = aimY - hPx * 0.55;     // Oberkante des Ziels
+    var baseY = topY + hPx;           // Unterkante des Ziels
     ctx.fillStyle = cssVar('--text-dim', '#9db0c3');
     ctx.strokeStyle = 'rgba(245,165,36,0.5)'; ctx.lineWidth = 1;
     if (S.target === 'hase') {
-      ctx.beginPath(); ctx.ellipse(cx, ty + hPx * 0.65, hPx * 0.55, hPx * 0.35, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(cx - hPx * 0.2, ty + hPx * 0.2, hPx * 0.09, hPx * 0.28, -0.2, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(cx + hPx * 0.12, ty + hPx * 0.2, hPx * 0.09, hPx * 0.28, 0.2, 0, Math.PI * 2); ctx.fill();
+      /* Hase: Aim-Punkt am Körperzentrum, proportional zur Höhe */
+      ctx.beginPath(); ctx.ellipse(cx, aimY, hPx * 0.55, hPx * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx - hPx * 0.2, topY + hPx * 0.2, hPx * 0.09, hPx * 0.28, -0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + hPx * 0.12, topY + hPx * 0.2, hPx * 0.09, hPx * 0.28, 0.2, 0, Math.PI * 2); ctx.fill();
     } else if (S.target === 'ipsc' || S.target === 'brust' || S.target === 'custom') {
-      ctx.fillRect(cx - hPx * 0.3, ty, hPx * 0.6, hPx);
-      ctx.strokeRect(cx - hPx * 0.3, ty, hPx * 0.6, hPx);
-      ctx.fillStyle = 'rgba(245,165,36,0.35)';
-      ctx.beginPath(); ctx.arc(cx, ty + hPx * 0.4, hPx * 0.14, 0, Math.PI * 2); ctx.fill();
-    } else {
-      ctx.beginPath(); ctx.arc(cx, ty + hPx * 0.09, hPx * 0.09, 0, Math.PI * 2); ctx.fill();
+      /* IPSC-Scheibe: Breite ~0.62 * Höhe, angeschrägte Schultern,
+         A-Zone-Mitte exakt auf aimY (= Kreuz), C-Zone, Kopf-Box. */
+      var bw = hPx * 0.62, hw = bw / 2;
+      var sh = hPx * 0.14;                      // Schulter-Schräge
+      var headW = hPx * 0.2, headH = hPx * 0.17; // Kopf-Box oben
       ctx.beginPath();
-      ctx.moveTo(cx - hPx * 0.16, ty + hPx * 0.2); ctx.lineTo(cx + hPx * 0.16, ty + hPx * 0.2);
-      ctx.lineTo(cx + hPx * 0.13, ty + hPx * 0.55); ctx.lineTo(cx + hPx * 0.1, ty + hPx);
-      ctx.lineTo(cx + hPx * 0.03, ty + hPx); ctx.lineTo(cx, ty + hPx * 0.62);
-      ctx.lineTo(cx - hPx * 0.03, ty + hPx); ctx.lineTo(cx - hPx * 0.1, ty + hPx);
-      ctx.lineTo(cx - hPx * 0.13, ty + hPx * 0.55); ctx.closePath(); ctx.fill();
+      ctx.moveTo(cx - hw, topY + sh);
+      ctx.lineTo(cx - headW, topY + headH);
+      ctx.lineTo(cx - headW, topY);
+      ctx.lineTo(cx + headW, topY);
+      ctx.lineTo(cx + headW, topY + headH);
+      ctx.lineTo(cx + hw, topY + sh);
+      ctx.lineTo(cx + hw, baseY);
+      ctx.lineTo(cx - hw, baseY);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      /* C-Zone (unterer Bereich der Scheibe) */
+      ctx.strokeRect(cx - hw * 0.66, aimY + hPx * 0.1, hw * 1.32, hPx * 0.3);
+      /* A-Zone: Rechteck um den Aim-Punkt, Mitte auf aimY */
+      var aw = hPx * 0.26, ah = hPx * 0.22;
+      ctx.strokeRect(cx - aw, aimY - ah, aw * 2, ah * 2);
+      ctx.fillStyle = 'rgba(245,165,36,0.35)';
+      ctx.beginPath(); ctx.arc(cx, aimY, Math.max(1.5, hPx * 0.06), 0, Math.PI * 2); ctx.fill();
+    } else {
+      /* Mann: schlank, Breite ~0.28 * Höhe, Kopf ~13% der Höhe (gesamte Figur inkl. Kopf).
+         Aim-Punkt (Brust) fest auf (cx, cy). */
+      var mw = hPx * 0.28, mhw = mw / 2;        // volle/halbe Schulterbreite
+      var headH = hPx * 0.13;                   // Kopfdurchmesser = 13% der Gesamthöhe
+      var kr = headH / 2;                       // Kopfradius
+      var headTop = topY;                       // Oberkante Kopf = Ziel-Oberkante
+      var shoulderY = headTop + headH;          // Schultern direkt unter dem Kopf
+      ctx.beginPath(); ctx.arc(cx, headTop + kr, kr, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx - mhw, shoulderY);
+      ctx.lineTo(cx + mhw, shoulderY);
+      ctx.lineTo(cx + mhw * 0.85, headTop + hPx * 0.56);
+      ctx.lineTo(cx + mhw * 0.6, baseY);
+      ctx.lineTo(cx + mhw * 0.15, baseY);
+      ctx.lineTo(cx, headTop + hPx * 0.6);
+      ctx.lineTo(cx - mhw * 0.15, baseY);
+      ctx.lineTo(cx - mhw * 0.6, baseY);
+      ctx.lineTo(cx - mhw * 0.85, headTop + hPx * 0.56);
+      ctx.closePath(); ctx.fill();
     }
 
     /* Marker */
