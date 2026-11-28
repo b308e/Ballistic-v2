@@ -1213,15 +1213,17 @@ input[type="date"].input { font-family: var(--font-num); }
   width: 150px;
   height: 150px;
   flex: none;
-  touch-action: none;
+  touch-action: none;           /* no-op: mobile Browser scrollen nicht waehrend des Drags */
+  -ms-touch-action: none;       /* Edge Legacy */
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;  /* iOS: Long-Press-Menue unterdruecken */
   border-radius: 50%;
 }
 .wind-dial.dragging { cursor: grabbing; }
 .wind-dial:focus-visible { outline: 2px solid var(--amber); outline-offset: 4px; }
-.wind-dial svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.wind-dial svg { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 
 .dial-face { fill: var(--bg-deep); stroke: var(--line); stroke-width: 1.5; }
 .dial-ring-inner { fill: none; stroke: var(--line-soft); stroke-width: 1; }

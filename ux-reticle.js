@@ -17,7 +17,7 @@
   window.__sniperReticleMounted = true;
 
   var KEY = 'sniperReticle.v1';
-  var DEF = { ret: 'mildot', mag: 10, ffp: true, dist: 0, target: 'ipsc', hCm: 45, mode: 'hold', wind: true, illum: true, sway: false };
+  var DEF = { ret: 'mildot', mag: 10, ffp: true, dist: 0, target: 'ipsc', hCm: 45, mode: 'hold', wind: true, illum: true, sway: false, sceneOffsetMil: 0 };
   var S = JSON.parse(JSON.stringify(DEF));
   try { var p = JSON.parse(localStorage.getItem(KEY) || '{}'); for (var k in DEF) if (p[k] !== undefined) S[k] = p[k]; } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -39,7 +39,12 @@
     var out = [], trs = t.querySelectorAll('tbody tr');
     for (var i = 0; i < trs.length; i++) {
       var td = trs[i].children, d = cellNum(td[0]), dr = cellNum(td[3]), wi = cellNum(td[5]);
-      if (d !== null && dr !== null) out.push({ d: d, drop: dr, drift: wi || 0 });
+      /* Drop-Konvention: Die Tabelle notiert den Fall oft als Betrag (positiv).
+         Physikalisch zeigt dropCm nach unten. Wir normalisieren hier auf den
+         Betrag und stellen die korrekte Richtung erst im Renderer her
+         (impactY = cy - |drop|*ppm, holdY = cy + |drop|*ppm). So liegt der
+         grüne Treffpunkt bei jeder Distanz > 0 unterhalb des amber Haltepunkts. */
+      if (d !== null && dr !== null) out.push({ d: d, drop: Math.abs(dr), drift: wi || 0 });
     }
     return out;
   }
@@ -109,6 +114,8 @@
         '<span class="toggle-row" style="min-height:38px"><span class="hint" style="margin:0">' + L('Rotpunkt', 'Red dot') + '</span><span class="switch"><input type="checkbox" id="rt-illum"><span class="slider"></span></span></span></div>' +
         '<div class="field"><span class="field-label">' + L('Atem-Sway', 'Breathing sway') + '</span>' +
         '<span class="toggle-row" style="min-height:38px"><span class="hint" style="margin:0">' + L('Simulation', 'Simulation') + '</span><span class="switch"><input type="checkbox" id="rt-sway"><span class="slider"></span></span></span></div>' +
+        '<label class="field"><span class="field-label">' + L('Szenenversatz (Mil)', 'Scene offset (Mil)') + ' <b id="rt-offv">0.0</b></span>' +
+        '<input class="range" type="range" id="rt-offset" min="-10" max="10" step="0.5" value="0"></label>' +
         '<div class="field"><span class="field-label">' + L('Aktionen', 'Actions') + '</span>' +
         '<div class="btn-row" style="margin:0"><button type="button" class="btn btn-small btn-primary" id="rt-export">PNG</button>' +
         '<button type="button" class="btn btn-small btn-ghost" id="rt-reset">Reset</button></div></div>' +
@@ -154,6 +161,10 @@
     else if (id === 'rt-wind') S.wind = ev.target.checked;
     else if (id === 'rt-illum') S.illum = ev.target.checked;
     else if (id === 'rt-sway') { S.sway = ev.target.checked; loop(); }
+    else if (id === 'rt-offset') {
+      S.sceneOffsetMil = Math.max(-10, Math.min(10, num(v) || 0));
+      var ob = document.getElementById('rt-offv'); if (ob) ob.textContent = S.sceneOffsetMil.toFixed(1);
+    }
     else return;
     save(); draw();
   }
@@ -164,8 +175,10 @@
     var set = function (id, val) { var el = card.querySelector('#' + id); if (el) el.value = val; };
     var chk = function (id, val) { var el = card.querySelector('#' + id); if (el) el.checked = !!val; };
     set('rt-ret', S.ret); set('rt-mag', S.mag); set('rt-h', S.hCm); set('rt-target', S.target);
+    set('rt-offset', S.sceneOffsetMil || 0);
     chk('rt-wind', S.wind); chk('rt-illum', S.illum); chk('rt-sway', S.sway);
     var mv = card.querySelector('#rt-magv'); if (mv) mv.textContent = S.mag + '×';
+    var ov2 = card.querySelector('#rt-offv'); if (ov2) ov2.textContent = (S.sceneOffsetMil || 0).toFixed(1);
     card.querySelector('#rt-ffp').classList.toggle('active', S.ffp);
     card.querySelector('#rt-sfp').classList.toggle('active', !S.ffp);
     card.querySelector('#rt-hold').classList.toggle('active', S.mode === 'hold');
@@ -209,6 +222,13 @@
       swayY = Math.cos(t / 1150) * ppm * 0.18 + Math.sin(t / 477) * ppm * 0.05;
     }
 
+    /* Szenenversatz: >0 schiebt Boden/Horizont/Silhouette nach unten. Die
+       Marker (Hold/Impact) werden konsistent mit demselben Versatz gezeichnet,
+       damit der Abstand Hold->Impact exakt dropMil * ppm betraegt und der
+       grüne Punkt nie über dem amber Punkt liegt. */
+    var offPx = (S.sceneOffsetMil || 0) * ppm;
+    var groundY = cy + R * 0.35;
+
     /* Szene */
     ctx.save();
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
@@ -218,26 +238,32 @@
     sky.addColorStop(0.72, cssVar('--surface-3', '#1c2938'));
     sky.addColorStop(1, cssVar('--bg-deep', '#06090d'));
     ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-    var glow = ctx.createRadialGradient(cx, cy + R * 0.35, 4, cx, cy + R * 0.35, R * 1.2);
+    var glow = ctx.createRadialGradient(cx, groundY + offPx, 4, cx, groundY + offPx, R * 1.2);
     glow.addColorStop(0, 'rgba(245,165,36,0.16)'); glow.addColorStop(1, 'rgba(245,165,36,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(6,9,13,0.55)';
-    ctx.fillRect(0, cy + R * 0.35, W, H);
+    ctx.fillRect(0, groundY + offPx, W, H);
     ctx.strokeStyle = 'rgba(157,176,195,0.10)'; ctx.lineWidth = 1;
     for (var g = 1; g <= 4; g++) {
-      ctx.beginPath(); ctx.moveTo(0, cy + R * 0.35 + g * R * 0.14); ctx.lineTo(W, cy + R * 0.35 + g * R * 0.14); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, groundY + offPx + g * R * 0.14); ctx.lineTo(W, groundY + offPx + g * R * 0.14); ctx.stroke();
     }
 
     ctx.translate(swayX, swayY);
 
     /* Ziel-Silhouette, angular korrekt skaliert.
-       Aim-Punkt (IPSC: Mitte A-Zone) ist FEST an (cx, cy) gekoppelt –
-       das Ziel wird um diesen Punkt herum aufgebaut, nicht an einer Bodenlinie. */
+       Aim-Punkt (IPSC: Mitte A-Zone) bleibt am Fadenkreuz-Zentrum (cx, cy);
+       der Szenenversatz (Szenenboden / Horizont) wird ueber sceneOffsetMil
+       vertikal verschoben, sodass die A-Zone auch bei grossen Distanzen und
+       hohem Drop im sichtbaren Bereich bleibt. */
     var hMil = sol ? (S.hCm * 10) / sol.d : (S.hCm * 10) / 300;
     var hPx = Math.max(3, hMil * ppm);
-    var aimY = cy;                    // fester Aim-Punkt = Fadenkreuz-Zentrum
-    var topY = aimY - hPx * 0.55;     // Oberkante des Ziels
-    var baseY = topY + hPx;           // Unterkante des Ziels
+    /* Silhouette gegenlaeufig zum Szenenversatz: erhoeht man sceneOffsetMil,
+       wandert die Szene (Boden/Horizont) nach unten und das Ziel relativ dazu
+       nach oben – so bleibt der Haltepunkt (amber, oberhalb des Kreuzes) bei
+       grossen Distanzen im sichtbaren Bereich. */
+    var aimY = cy - offPx;              // Aim-Punkt = Kreuz − Szenenversatz
+    var topY = aimY - hPx * 0.55;       // Oberkante des Ziels
+    var baseY = topY + hPx;             // Unterkante des Ziels
     ctx.fillStyle = cssVar('--text-dim', '#9db0c3');
     ctx.strokeStyle = 'rgba(245,165,36,0.5)'; ctx.lineWidth = 1;
     if (S.target === 'hase') {
@@ -292,16 +318,50 @@
 
     /* Marker */
     if (sol) {
-      var ix = cx + sol.windMil * ppm, iy = cy + sol.dropMil * ppm;
-      if (S.mode === 'dial') { ix = cx; iy = cy; }
+      /* Vorzeichen-Konvention: dropCm in der Tabelle ist negativ (Treffpunkt
+         unter der Visierlinie). Canvas-Y zeigt nach unten (Y+ = tiefer), daher
+         wird der Betrag des Drops SUBTRAHIERT:
+           impactY = cy - |dropMil| * ppm   -> gruen liegt UNTEN
+           holdY   = cy + |dropMil| * ppm   -> amber Haltepunkt liegt OBEN.
+         Akzeptanzkriterium: bei jeder Distanz > 0 liegt der grüne Punkt
+         unterhalb (oder auf Höhe) des amber Punkts – nie darüber. */
+      var dropMag = Math.abs(sol.dropMil);
+      var ix = cx + sol.windMil * ppm, iy = cy - dropMag * ppm + offPx;
+      if (S.mode === 'dial') { ix = cx; iy = cy + offPx; }
+
+      /* Semantische Canvas-Labels: farbig unterlegte Text-Badges direkt
+         neben den Markern, damit Amber (Halten) und Gruen (Treff) auch ohne
+         Farbunterscheidung (z.B. Farbfehlsicht / Display) zuordenbar sind. */
+      ctx.font = '700 9px ' + cssVar('--font-ui', 'sans-serif');
+      function markerLabel(text, color, x, y) {
+        var padX = 4, hgt = 13;
+        var w = ctx.measureText(text).width + padX * 2;
+        var flip = (x + 12 + w) > (cx + R - 6);   // am rechten Rand nach links spiegeln
+        var bx = flip ? x - 12 - w : x + 12;
+        var by = Math.max(cy - R + 6, Math.min(cy + R - hgt - 6, y - hgt / 2));
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(4,6,10,0.78)';
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, w, hgt, 3); ctx.fill(); }
+        else ctx.fillRect(bx, by, w, hgt);
+        ctx.strokeStyle = color; ctx.lineWidth = 1;
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, w, hgt, 3); ctx.stroke(); }
+        else ctx.strokeRect(bx, by, w, hgt);
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(text, bx + padX, by + hgt / 2 + 0.5);
+        ctx.restore();
+      }
+
       ctx.fillStyle = cssVar('--green', '#38d39f');
       ctx.shadowColor = cssVar('--green', '#38d39f'); ctx.shadowBlur = 10;
       ctx.beginPath(); ctx.arc(ix, iy, 4, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       ctx.strokeStyle = cssVar('--green', '#38d39f'); ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(ix, iy, 8, 0, Math.PI * 2); ctx.stroke();
+      markerLabel(L('TREFFPUNKT', 'IMPACT'), cssVar('--green', '#38d39f'), ix, iy);
       if (S.mode === 'hold') {
-        var hx = cx - sol.windMil * ppm, hy = cy - sol.dropMil * ppm;
+        var hx = cx - sol.windMil * ppm, hy = cy + dropMag * ppm + offPx;
         ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(245,165,36,0.6)';
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = cssVar('--amber', '#f5a524');
@@ -310,10 +370,7 @@
         ctx.shadowBlur = 0;
         ctx.strokeStyle = cssVar('--amber', '#f5a524'); ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.arc(hx, hy, 9, 0, Math.PI * 2); ctx.stroke();
-        ctx.font = '700 9px ' + cssVar('--font-ui', 'sans-serif');
-        ctx.fillStyle = cssVar('--amber', '#f5a524');
-        ctx.textAlign = 'left';
-        ctx.fillText('HALTEPUNKT', hx + 12, hy - 8);
+        markerLabel(L('HALTEPUNKT', 'HOLD'), cssVar('--amber', '#f5a524'), hx, hy);
       }
     }
 
@@ -404,7 +461,7 @@
     var cm = sol.cm;
     var eC = Math.abs(sol.dropMil) / cm, wC = Math.abs(sol.windMil) / cm;
     el.innerHTML =
-      '<span class="chip"><span class="chip-label">Drop</span><span class="chip-value">' + sol.dropMil.toFixed(2) + ' mil</span></span>' +
+      '<span class="chip"><span class="chip-label">Drop</span><span class="chip-value">−' + sol.dropMil.toFixed(2) + ' mil</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Wind', 'Wind') + '</span><span class="chip-value">' + sol.windMil.toFixed(2) + ' mil</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Höhe Klicks', 'Elev clicks') + '</span><span class="chip-value">' + eC.toFixed(1) + '</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Seite Klicks', 'Wind clicks') + '</span><span class="chip-value">' + wC.toFixed(1) + (sol.windMil > 0.005 ? ' L' : sol.windMil < -0.005 ? ' R' : '') + '</span></span>' +
