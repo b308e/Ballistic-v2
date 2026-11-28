@@ -33,7 +33,13 @@
 
   function toast(msg) {
     var root = document.getElementById('toast-root');
-    if (!root) return;
+    if (!root) {
+      /* Fallback: app.js hat noch nicht gerendert / DOM-Recycling – Root selbst anlegen */
+      root = document.createElement('div');
+      root.id = 'toast-root';
+      root.setAttribute('aria-live', 'polite');
+      document.body.appendChild(root);
+    }
     var el = document.createElement('div');
     el.className = 'toast';
     el.textContent = msg;
@@ -154,35 +160,102 @@
     }
   }
 
+  /* Universelle Koordinaten: pointer events → clientX/Y; ältere iOS-Versionen
+     ohne Pointer-Support → Touch-Fallback. getBoundingClientRect() liegt bereits
+     im Client-Viewport (berücksichtigt Scroll-Position und Zoom), die Division
+     durch rect.width (nicht CSS-Pixel-Annahme) macht die Berechnung robust
+     gegen Page-Zoom / Browser-Zoom. */
+  function eventPoint(ev) {
+    if (typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+      return { x: ev.clientX, y: ev.clientY };
+    }
+    var t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]);
+    return t ? { x: t.clientX, y: t.clientY } : null;
+  }
+
   function angleFromEvent(ev, dial) {
+    var p = eventPoint(ev);
+    if (!p) return null;
     var r = dial.getBoundingClientRect();
-    var dx = ev.clientX - (r.left + r.width / 2);
-    var dy = ev.clientY - (r.top + r.height / 2);
+    if (!r.width || !r.height) return null;
+    var dx = p.x - (r.left + r.width / 2);
+    var dy = p.y - (r.top + r.height / 2);
+    if (dx === 0 && dy === 0) return null; // exakt im Zentrum: kein gültiger Winkel
     var deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
     return ((Math.round(deg) % 360) + 360) % 360;
   }
 
-  document.addEventListener('pointerdown', function (ev) {
-    var dial = ev.target.closest && ev.target.closest('.wind-dial');
-    if (!dial) return;
-    ev.preventDefault();
-    dial.classList.add('dragging');
-    try { dial.setPointerCapture(ev.pointerId); } catch (e) {}
-    syncDial(angleFromEvent(ev, dial));
-    function move(e2) { syncDial(angleFromEvent(e2, dial)); }
-    function up(e2) {
+  function bindDialDrag(dial) {
+    if (!dial || dial.dataset.uxDragBound) return;
+    dial.dataset.uxDragBound = '1';
+
+    /* Explizites touch-action: none auch inline – falls externes CSS fehlt oder
+       überschrieben wird, würde der Browser sonst beim Touch-Drag scrollen. */
+    dial.style.touchAction = 'none';
+    dial.style.webkitUserSelect = 'none';
+
+    var active = false;
+
+    function setAngle(ev) {
+      var deg = angleFromEvent(ev, dial);
+      if (deg !== null) syncDial(deg);
+    }
+
+    function onDown(ev) {
+      if (active) return;                 // Mehrfinger-Touch ignorieren
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      active = true;
+      /* Capture-Phase + preventDefault: verhindert, dass der native
+         Scroll-/Gesten-Handler dem Custom-Drag zuvorkommt. */
+      if (ev.cancelable) ev.preventDefault();
+      dial.classList.add('dragging');
+      try { dial.setPointerCapture(ev.pointerId); } catch (e) {}
+      setAngle(ev);
+    }
+
+    function onMove(ev) {
+      if (!active) return;
+      if (ev.cancelable) ev.preventDefault();
+      setAngle(ev);
+    }
+
+    function onUp(ev) {
+      if (!active) return;
+      active = false;
       dial.classList.remove('dragging');
-      dial.removeEventListener('pointermove', move);
-      dial.removeEventListener('pointerup', up);
-      dial.removeEventListener('pointercancel', up);
-      var deg = angleFromEvent(e2, dial);
+      try { dial.releasePointerCapture(ev.pointerId); } catch (e) {}
+      var deg = angleFromEvent(ev, dial);
+      if (deg === null) deg = parseInt(dial.getAttribute('aria-valuenow'), 10) || 0;
+      syncDial(deg);
       var inp = dialEls().input;
       if (inp) fireField(inp, deg);
     }
-    dial.addEventListener('pointermove', move);
-    dial.addEventListener('pointerup', up);
-    dial.addEventListener('pointercancel', up);
-  });
+
+    if (window.PointerEvent) {
+      dial.addEventListener('pointerdown', onDown);
+      dial.addEventListener('pointermove', onMove);
+      dial.addEventListener('pointerup', onUp);
+      dial.addEventListener('pointercancel', onUp);
+      dial.addEventListener('lostpointercapture', onUp);
+    } else {
+      /* Fallback für Geräte ohne PointerEvents (älteres iOS Safari):
+         Touch + Maus parallel, Duplikate über preventDefault unterdrückt. */
+      dial.addEventListener('touchstart', onDown, { passive: false });
+      dial.addEventListener('touchmove', onMove, { passive: false });
+      dial.addEventListener('touchend', onUp);
+      dial.addEventListener('touchcancel', onUp);
+      dial.addEventListener('mousedown', onDown);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+  }
+
+  /* Delegation auf document (Capture): funktioniert auch nach Re-Render /
+     DOM-Recycling, da keine Listener an entfernten Knoten hängen. */
+  document.addEventListener('pointerdown', function (ev) {
+    var dial = ev.target.closest && ev.target.closest('.wind-dial');
+    if (dial) bindDialDrag(dial);
+  }, true);
 
   document.addEventListener('keydown', function (ev) {
     var dial = ev.target.closest && ev.target.closest('.wind-dial');
@@ -532,14 +605,16 @@
     return s;
   }
 
+  function secureOrigin() {
+    if (window.isSecureContext === true) return true;
+    if (window.location.protocol === 'https:') return true;
+    return /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/.test(window.location.hostname);
+  }
+
+  /* Overlay + manuellen Fallback sofort aufbauen – die Sensor-API wird erst
+     danach gestartet, damit ein Fehler darin das DOM nie "schlucken" kann. */
   function openSensor() {
     closeSensor();
-    
-    // HTTPS Check für lokale Tests
-    if (window.location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
-      toast(L('Sensoren benötigen HTTPS oder localhost.', 'Sensors require HTTPS or localhost.'));
-      return;
-    }
 
     var ov = document.createElement('div');
     ov.className = 'sensor-overlay';
@@ -670,32 +745,66 @@
       }, 1000);
     }
 
-    // iOS Permission Handling
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission().then(function (res) {
-        if (res === 'granted') {
-          startListening();
-        } else {
-          // Verweigert -> Manual Mode aktivieren
-          var st = document.getElementById('ux-status');
-          if (st) st.textContent = L('Zugriff verweigert. Bitte manuell eingeben.', 'Access denied. Please enter manually.');
-          var ap = document.getElementById('ux-sensor-apply');
-          if (ap) ap.disabled = false;
-        }
-      }).catch(function (err) {
-        console.warn('Sensor permission error:', err);
-        var ap = document.getElementById('ux-sensor-apply');
-        if (ap) ap.disabled = false;
-      });
-    } else if ('DeviceOrientationEvent' in window) {
-      // Android / Desktop Fallback
-      startListening();
-    } else {
-      // Kein Sensor vorhanden
+    function manualFallback(msg) {
+      /* Sensor-API ausgefallen / verweigert / blockiert: Overlay bleibt offen,
+         manuelles Eingabefeld ist sofort aktiv und Apply ist freigegeben. */
+      if (sensor && sensor.timer) { clearInterval(sensor.timer); sensor.timer = null; }
+      if (!sensor) return;
+      sensor.done = true;
       var st = document.getElementById('ux-status');
-      if (st) st.textContent = L('Kein Sensor verfügbar. Manuell eingeben.', 'No sensor available. Enter manually.');
+      if (st) st.textContent = msg;
+      var cn = document.getElementById('ux-count');
+      if (cn) cn.textContent = '—';
       var ap = document.getElementById('ux-sensor-apply');
       if (ap) ap.disabled = false;
+      var man = document.getElementById('ux-manual');
+      if (man) { man.focus(); }
+      toast(msg);
+    }
+
+    function startSensors() {
+      try {
+        startListening();
+      } catch (err) {
+        console.warn('Sensor start failed:', err);
+        manualFallback(L('Sensorfehler – bitte manuell eingeben.', 'Sensor error – please enter manually.'));
+      }
+    }
+
+    /* 1) Insecure Origin: Sensoren sind browserseitig gesperrt -> Toast statt
+          stummem Abbruch, Overlay bleibt mit manuellem Fallback nutzbar. */
+    if (!secureOrigin()) {
+      manualFallback(L('Sensoren benötigen HTTPS – Wert manuell eingeben.', 'Sensors require HTTPS – enter value manually.'));
+      return;
+    }
+
+    /* 2) iOS 13+: requestPermission() zwingend aus User-Geste heraus,
+          hier in try/catch + Promise-Guard gegen unhandled Rejections. */
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        var p = DeviceOrientationEvent.requestPermission();
+        if (p && typeof p.then === 'function') {
+          p.then(function (res) {
+            if (!sensor) return; // Overlay inzwischen geschlossen
+            if (res === 'granted') startSensors();
+            else manualFallback(L('Zugriff verweigert. Bitte manuell eingeben.', 'Access denied. Please enter manually.'));
+          }).catch(function (err) {
+            console.warn('Sensor permission error:', err);
+            manualFallback(L('Berechtigung fehlgeschlagen. Manuell eingeben.', 'Permission failed. Enter manually.'));
+          });
+        } else {
+          startSensors();
+        }
+      } else if ('DeviceOrientationEvent' in window) {
+        /* Android / Desktop */
+        startSensors();
+      } else {
+        manualFallback(L('Kein Sensor verfügbar. Manuell eingeben.', 'No sensor available. Enter manually.'));
+      }
+    } catch (err) {
+      console.warn('Sensor init error:', err);
+      manualFallback(L('Sensorinitialisierung fehlgeschlagen. Manuell eingeben.', 'Sensor init failed. Enter manually.'));
     }
   }
 
@@ -762,13 +871,19 @@
     if (ov) ov.remove();
   }
 
-  // Event Listener für den Button (Capture Phase um Konflikte zu vermeiden)
+  // Event Listener für den Button: Delegation auf document in der Capture-Phase –
+  // überlebt Re-Render / DOM-Recycling, da nie an einen konkreten Button gebunden.
   document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest && ev.target.closest('[data-action="sensor"]');
+    var btn = ev.target && ev.target.closest ? ev.target.closest('[data-action="sensor"]') : null;
     if (!btn) return;
     ev.preventDefault();
-    ev.stopImmediatePropagation();
-    openSensor();
+    ev.stopPropagation();
+    try {
+      openSensor();
+    } catch (err) {
+      console.warn('openSensor error:', err);
+      toast(L('Sensor-Overlay konnte nicht geöffnet werden.', 'Sensor overlay failed to open.'));
+    }
   }, true);
 
   /* ==========================================================================
