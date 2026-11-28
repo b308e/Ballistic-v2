@@ -13,7 +13,7 @@
    ========================================================================== */
 'use strict';
 
-var CACHE_VERSION = 'sniper-v0.132';
+var CACHE_VERSION = 'sniper-v0.133';
 var CACHE_NAME = 'sniper-' + CACHE_VERSION;
 
 /* Alle App-Assets relativ zum SW-Scope (funktioniert auf GitHub Pages
