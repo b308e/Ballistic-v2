@@ -16,10 +16,19 @@
   window.__sniperUxMounted = true;
 
   var UX_KEY = 'sniperUx.v1';
-  var prefs = { sensorSecs: 5 };
+  var prefs = { sensorSecs: 5, tiltZero: 0 };
   try {
     var raw = localStorage.getItem(UX_KEY);
-    if (raw) { var p = JSON.parse(raw); if (p && p.sensorSecs >= 2 && p.sensorSecs <= 10) prefs.sensorSecs = p.sensorSecs; }
+    if (raw) {
+      var p = JSON.parse(raw);
+      if (p && p.sensorSecs >= 2 && p.sensorSecs <= 10) prefs.sensorSecs = p.sensorSecs;
+      /* Tilt-Nullung (Kalibrierungs-Offset in Grad). Zahl oder numerischer
+         String akzeptiert; bestehende Keys bleiben erhalten (wird nie geloescht). */
+      if (p) {
+        var tz = parseFloat(String(p.tiltZero).replace(',', '.'));
+        if (isFinite(tz)) prefs.tiltZero = Math.max(-60, Math.min(60, tz));
+      }
+    }
   } catch (e) {}
   function savePrefs() { try { localStorage.setItem(UX_KEY, JSON.stringify(prefs)); } catch (e) {} }
 
@@ -633,6 +642,10 @@
         '<div class="tilt-stage" data-stage="tilt" hidden>' +
           '<div class="tilt-track"><div class="tilt-zero"></div><div class="tilt-bubble" id="ux-bubble"></div></div>' +
           '<div class="tilt-readout"><span id="ux-tilt">0.0°</span><small>' + L('Bergauf / Bergab', 'Uphill / Downhill') + '</small></div>' +
+          '<div class="tilt-calib-row" style="display:flex;align-items:center;gap:10px;margin-top:8px">' +
+            '<button type="button" class="btn btn-small btn-ghost" id="ux-tilt-zero">' + L('Jetzt nullen', 'Zero now') + '</button>' +
+            '<span class="hint" style="margin:0">' + L('Null:', 'Zero:') + ' <b id="ux-tilt-zerov">0.0°</b></span>' +
+          '</div>' +
         '</div>' +
         '<div class="sensor-progress">' +
           '<div class="count-ring"><svg viewBox="0 0 54 54"><circle class="count-track" cx="27" cy="27" r="24"/>' +
@@ -652,9 +665,25 @@
     document.body.appendChild(ov);
 
     sensor = {
-      mode: 'compass', heading: null, tilt: 0, samples: [], tiltSamples: [],
+      mode: 'compass', heading: null, tiltRaw: 0, tilt: 0, samples: [], tiltSamples: [],
       accuracy: null, left: prefs.sensorSecs, done: false, timer: null, gotEvent: false
     };
+
+    /* Tilt-Anzeige: Rohwert minus persistierter Nullung (prefs.tiltZero). */
+    function relTilt() { return Math.max(-60, Math.min(60, sensor.tiltRaw - (prefs.tiltZero || 0))); }
+    function renderTilt() {
+      if (!sensor) return;
+      var t = relTilt();
+      sensor.tilt = t;
+      var bub = document.getElementById('ux-bubble');
+      if (bub) bub.style.transform = 'translateX(' + (t / 60 * 45) + '%)';
+      var tr = document.getElementById('ux-tilt');
+      if (tr) tr.textContent = t.toFixed(1) + '°';
+    }
+    function renderTiltZero() {
+      var zv = document.getElementById('ux-tilt-zerov');
+      if (zv) zv.textContent = (prefs.tiltZero || 0).toFixed(1) + '°';
+    }
 
     ov.addEventListener('click', function (ev) {
       if (ev.target === ov || ev.target.id === 'ux-sensor-cancel') { closeSensor(); return; }
@@ -666,8 +695,23 @@
         ov.querySelector('[data-stage="tilt"]').hidden = sensor.mode !== 'tilt';
         return;
       }
+      if (ev.target.id === 'ux-tilt-zero' || (ev.target.closest && ev.target.closest('#ux-tilt-zero'))) {
+        /* Nullung: aktueller Rohwinkel wird neuer Referenzpunkt
+           (zeroOffset = currentMeasuredAngle - 0). Persistiert in
+           prefs.tiltZero unter dem bestehenden Key sniperUx.v1. */
+        var raw = isFinite(sensor.tiltRaw) ? sensor.tiltRaw : 0;
+        prefs.tiltZero = Math.max(-60, Math.min(60, raw));
+        savePrefs();
+        sensor.tiltSamples = [];
+        renderTiltZero();
+        renderTilt();
+        toast(L('Neigung genullt: ', 'Tilt zeroed at ') + prefs.tiltZero.toFixed(1) + '°');
+        return;
+      }
       if (ev.target.id === 'ux-sensor-apply') applySensor();
     });
+    renderTiltZero();
+    renderTilt();
 
     function onOrient(ev) {
       if (!sensor) return;
@@ -693,18 +737,16 @@
         if (hb) hb.textContent = Math.round(head) + '°';
       }
 
-      // Neigung berechnen
+      // Neigung berechnen: Rohwert getrennt halten, Anzeige/Übergabe immer
+      // relativ zur Nullung (prefs.tiltZero).
       var landscape = Math.abs(window.orientation || 0) === 90;
-      var tilt = landscape ? (ev.gamma || 0) : ((ev.beta || 0) - 90);
-      tilt = Math.max(-60, Math.min(60, tilt));
-      sensor.tilt = tilt;
+      var raw = landscape ? (ev.gamma || 0) : ((ev.beta || 0) - 90);
+      sensor.tiltRaw = Math.max(-60, Math.min(60, raw));
+      var tilt = relTilt();
       sensor.tiltSamples.push(tilt);
-      
-      var bub = document.getElementById('ux-bubble');
-      if (bub) bub.style.transform = 'translateX(' + (tilt / 60 * 45) + '%)';
-      var tr = document.getElementById('ux-tilt');
-      if (tr) tr.textContent = tilt.toFixed(1) + '°';
-      
+
+      renderTilt();
+
       var sb = document.getElementById('ux-samples');
       if (sb) sb.textContent = sensor.samples.length + sensor.tiltSamples.length;
       updateQuality();

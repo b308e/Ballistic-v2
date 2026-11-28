@@ -39,7 +39,12 @@
     var out = [], trs = t.querySelectorAll('tbody tr');
     for (var i = 0; i < trs.length; i++) {
       var td = trs[i].children, d = cellNum(td[0]), dr = cellNum(td[3]), wi = cellNum(td[5]);
-      if (d !== null && dr !== null) out.push({ d: d, drop: dr, drift: wi || 0 });
+      /* Drop-Konvention: Die Tabelle notiert den Fall oft als Betrag (positiv).
+         Physikalisch zeigt dropCm nach unten. Wir normalisieren hier auf den
+         Betrag und stellen die korrekte Richtung erst im Renderer her
+         (impactY = cy - |drop|*ppm, holdY = cy + |drop|*ppm). So liegt der
+         grüne Treffpunkt bei jeder Distanz > 0 unterhalb des amber Haltepunkts. */
+      if (d !== null && dr !== null) out.push({ d: d, drop: Math.abs(dr), drift: wi || 0 });
     }
     return out;
   }
@@ -110,7 +115,7 @@
         '<div class="field"><span class="field-label">' + L('Atem-Sway', 'Breathing sway') + '</span>' +
         '<span class="toggle-row" style="min-height:38px"><span class="hint" style="margin:0">' + L('Simulation', 'Simulation') + '</span><span class="switch"><input type="checkbox" id="rt-sway"><span class="slider"></span></span></span></div>' +
         '<label class="field"><span class="field-label">' + L('Szenenversatz (Mil)', 'Scene offset (Mil)') + ' <b id="rt-offv">0.0</b></span>' +
-        '<input class="range" type="range" id="rt-offset" min="-30" max="30" step="0.5" value="0"></label>' +
+        '<input class="range" type="range" id="rt-offset" min="-10" max="10" step="0.5" value="0"></label>' +
         '<div class="field"><span class="field-label">' + L('Aktionen', 'Actions') + '</span>' +
         '<div class="btn-row" style="margin:0"><button type="button" class="btn btn-small btn-primary" id="rt-export">PNG</button>' +
         '<button type="button" class="btn btn-small btn-ghost" id="rt-reset">Reset</button></div></div>' +
@@ -157,7 +162,7 @@
     else if (id === 'rt-illum') S.illum = ev.target.checked;
     else if (id === 'rt-sway') { S.sway = ev.target.checked; loop(); }
     else if (id === 'rt-offset') {
-      S.sceneOffsetMil = Math.max(-30, Math.min(30, num(v) || 0));
+      S.sceneOffsetMil = Math.max(-10, Math.min(10, num(v) || 0));
       var ob = document.getElementById('rt-offv'); if (ob) ob.textContent = S.sceneOffsetMil.toFixed(1);
     }
     else return;
@@ -217,8 +222,10 @@
       swayY = Math.cos(t / 1150) * ppm * 0.18 + Math.sin(t / 477) * ppm * 0.05;
     }
 
-    /* Szenenversatz: >0 schiebt Boden/Silhouette nach unten, A-Zone bleibt
-       relativ zum Fadenkreuz justierbar (aimY = cy + sceneOffsetMil * ppm). */
+    /* Szenenversatz: >0 schiebt Boden/Horizont/Silhouette nach unten. Die
+       Marker (Hold/Impact) werden konsistent mit demselben Versatz gezeichnet,
+       damit der Abstand Hold->Impact exakt dropMil * ppm betraegt und der
+       grüne Punkt nie über dem amber Punkt liegt. */
     var offPx = (S.sceneOffsetMil || 0) * ppm;
     var groundY = cy + R * 0.35;
 
@@ -250,7 +257,11 @@
        hohem Drop im sichtbaren Bereich bleibt. */
     var hMil = sol ? (S.hCm * 10) / sol.d : (S.hCm * 10) / 300;
     var hPx = Math.max(3, hMil * ppm);
-    var aimY = cy + offPx;              // Aim-Punkt = Kreuz + Szenenversatz
+    /* Silhouette gegenlaeufig zum Szenenversatz: erhoeht man sceneOffsetMil,
+       wandert die Szene (Boden/Horizont) nach unten und das Ziel relativ dazu
+       nach oben – so bleibt der Haltepunkt (amber, oberhalb des Kreuzes) bei
+       grossen Distanzen im sichtbaren Bereich. */
+    var aimY = cy - offPx;              // Aim-Punkt = Kreuz − Szenenversatz
     var topY = aimY - hPx * 0.55;       // Oberkante des Ziels
     var baseY = topY + hPx;             // Unterkante des Ziels
     ctx.fillStyle = cssVar('--text-dim', '#9db0c3');
@@ -307,8 +318,16 @@
 
     /* Marker */
     if (sol) {
-      var ix = cx + sol.windMil * ppm, iy = cy + sol.dropMil * ppm;
-      if (S.mode === 'dial') { ix = cx; iy = cy; }
+      /* Vorzeichen-Konvention: dropCm in der Tabelle ist negativ (Treffpunkt
+         unter der Visierlinie). Canvas-Y zeigt nach unten (Y+ = tiefer), daher
+         wird der Betrag des Drops SUBTRAHIERT:
+           impactY = cy - |dropMil| * ppm   -> gruen liegt UNTEN
+           holdY   = cy + |dropMil| * ppm   -> amber Haltepunkt liegt OBEN.
+         Akzeptanzkriterium: bei jeder Distanz > 0 liegt der grüne Punkt
+         unterhalb (oder auf Höhe) des amber Punkts – nie darüber. */
+      var dropMag = Math.abs(sol.dropMil);
+      var ix = cx + sol.windMil * ppm, iy = cy - dropMag * ppm + offPx;
+      if (S.mode === 'dial') { ix = cx; iy = cy + offPx; }
 
       /* Semantische Canvas-Labels: farbig unterlegte Text-Badges direkt
          neben den Markern, damit Amber (Halten) und Gruen (Treff) auch ohne
@@ -342,7 +361,7 @@
       ctx.beginPath(); ctx.arc(ix, iy, 8, 0, Math.PI * 2); ctx.stroke();
       markerLabel(L('TREFFPUNKT', 'IMPACT'), cssVar('--green', '#38d39f'), ix, iy);
       if (S.mode === 'hold') {
-        var hx = cx - sol.windMil * ppm, hy = cy - sol.dropMil * ppm;
+        var hx = cx - sol.windMil * ppm, hy = cy + dropMag * ppm + offPx;
         ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(245,165,36,0.6)';
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = cssVar('--amber', '#f5a524');
@@ -442,7 +461,7 @@
     var cm = sol.cm;
     var eC = Math.abs(sol.dropMil) / cm, wC = Math.abs(sol.windMil) / cm;
     el.innerHTML =
-      '<span class="chip"><span class="chip-label">Drop</span><span class="chip-value">' + sol.dropMil.toFixed(2) + ' mil</span></span>' +
+      '<span class="chip"><span class="chip-label">Drop</span><span class="chip-value">−' + sol.dropMil.toFixed(2) + ' mil</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Wind', 'Wind') + '</span><span class="chip-value">' + sol.windMil.toFixed(2) + ' mil</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Höhe Klicks', 'Elev clicks') + '</span><span class="chip-value">' + eC.toFixed(1) + '</span></span>' +
       '<span class="chip"><span class="chip-label">' + L('Seite Klicks', 'Wind clicks') + '</span><span class="chip-value">' + wC.toFixed(1) + (sol.windMil > 0.005 ? ' L' : sol.windMil < -0.005 ? ' R' : '') + '</span></span>' +
